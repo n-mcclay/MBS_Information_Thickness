@@ -1,0 +1,409 @@
+---
+title: "Hedonic Data Set Creation"
+author: "Nathan McClay"
+date: "2025-12-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+install.packages("tidyverse")
+```
+
+```{r packages}
+require(tidyverse)
+
+```
+
+```{r}
+getwd()
+```
+
+
+
+```{r datasets}
+# assessments <- read.csv("/Users/nathanmcclay/Downloads/Fa25/Public Economics/Mortgage Markets/Data/Public Economics Capstone/assessments_2020.csv")
+
+#OPA <- read_csv("/Users/nathanmcclay/Downloads/Fa25/Public Economics/Mortgage Markets/Data/Public Economics Capstone/opa_properties_public_2020.csv")
+
+RTT <- read_csv("/Users/nathanmcclay/Downloads/Fa25/Public Economics/Mortgage Markets/Data/Public Economics Capstone/rtt_2020_clean.csv")
+```
+
+```{r}
+problems(RTT)%>%
+```
+
+```{r}
+library(vroom)
+
+RTT <- vroom::vroom(
+  "/Users/nathanmcclay/Downloads/Fa25/Public Economics/Mortgage Markets/Data/Public Economics Capstone/rtt_2020_clean.csv",
+  col_types = cols(
+    .default       = col_guess(),      # let vroom infer most
+    street_postdir = col_character(),  # force to character
+    receipt_num    = col_character()   # IDs should be character too
+  )
+)
+
+
+```
+
+```{r}
+
+glimpse(RTT)
+glimpse(OPA)
+glimpse(assessments)
+
+```
+
+```{r}
+library(dplyr)
+library(lubridate)
+library(stringr)
+
+# --- 1. Clean RTT Data (Rename/Standardize 9-digit ID) ---
+RTT_clean <- RTT %>%
+  rename(opa_account_9digit = opa_account_num) %>%
+  # Keep the RegMap ID from RTT just in case it's needed for the assessments join
+  rename(reg_map_id_rtt = matched_regmap) %>%
+  mutate(transaction_year = year(recording_date)) # Extract year for assessments join
+
+# --- 2. Clean OPA Data (Standardize 9-digit ID and RegMap ID) ---
+OPA_clean <- OPA %>%
+  rename(opa_account_9digit = parcel_number) %>%
+  # Rename OPA's Registry Number (RegMap ID) for consistency
+  rename(reg_map_id_opa = registry_number)
+
+# --- 3. Clean Assessments Data (Identify its Key as RegMap ID) ---
+assessments_clean <- assessments %>%
+  # Rename the key in assessments to clearly identify it as the RegMap ID
+  rename(reg_map_id_assessment = parcel_number) %>%
+  mutate(reg_map_id_assessment = as.character(reg_map_id_assessment)) # Ensure it's character
+
+# --- 4. Create the Crosswalk Table (RTT/OPA Link via RegMap ID) ---
+# Use the RTT data as a bridge if the OPA file is missing the RegMap ID for some 9-digit IDs
+# Let's use the OPA file, as it should be the most comprehensive source for the static links.
+crosswalk <- OPA_clean %>%
+  select(opa_account_9digit, reg_map_id_opa) %>%
+  # Ensure the RegMap ID is clean and drop duplicates
+  filter(!is.na(reg_map_id_opa)) %>%
+  distinct()
+
+
+# --- 5. Join assessments to the Crosswalk to get the 9-digit ID ---
+assessments_w_9digit_id <- assessments_clean %>%
+  left_join(crosswalk,
+            by = c("reg_map_id_assessment" = "reg_map_id_opa")
+  ) %>%
+  # Drop records that couldn't be mapped to the 9-digit ID
+  filter(!is.na(opa_account_9digit)) %>%
+  # Select only the needed columns for the final join
+  select(opa_account_9digit, year, market_value, taxable_land, taxable_building, exempt_land, exempt_building)
+
+```
+
+```{r}
+# Join RTT (transactions) with OPA (current property details)
+# Use INNER JOIN to ensure we only have valid transaction/property pairs.
+rtt_opa_joined <- RTT_clean %>%
+  inner_join(OPA_clean,
+             by = "opa_account_9digit",
+             suffix = c(".rtt", ".opa"))
+```
+
+```{r}
+# Join the result with the assessments data on both property ID AND year
+final_joined_data <- rtt_opa_joined %>%
+  left_join(
+    assessments_w_9digit_id,
+    by = c("opa_account_9digit", "transaction_year" = "year")
+  )
+
+# Review the final joined data structure
+glimpse(final_joined_data)
+```
+
+```{r}
+#write_csv(final_joined_data, file = "/Users/nathanmcclay/Downloads/Fa25/Public Economics/Mortgage Markets/Data/Public Economics Capstone/final_joined_data")
+```
+
+```{r}
+
+# --- 1. Clean, Transform, and Rename Core Variables ---
+
+concentrated_data <- final_joined_data %>%
+  # Select the most critical variables and standardize names
+  select(
+    # --- DEPENDENT VARIABLE ---
+    Sale_Price_Raw_Char = adjusted_total_consideration,
+
+    # --- LOCATION AND TIME KEYS (for Index and Fixed Effects) ---
+    Tract_ID = census_tract,
+    Recording_Date = recording_date.rtt,
+
+    # --- STRUCTURAL CONTROLS ---
+    Livable_Area = total_livable_area,
+    Year_Built = year_built,
+    Property_Type = building_code_description,
+    Quality_Grade = quality_grade,
+    Num_Beds = number_of_bedrooms,
+    Num_Baths = number_of_bathrooms,
+    Basements = basements,
+    Central_Air = central_air,
+    Fireplaces = fireplaces,
+
+    # --- Other Control Variables (e.g., Assessed Value for check) ---
+    OPA_Market_Value_Current = market_value.y, # Current assessed value
+    Assessed_Market_Value_Hist = market_value.x,        # Historical annual assessment (from assessments table)
+    Zoning = zoning
+  ) %>%
+  
+  # --- 2. Data Cleaning and Transformation ---
+  
+  # Clean Sale Price: Convert from character, replacing "0E-8" with 0
+  mutate(
+    Sale_Price_Raw = str_replace_all(Sale_Price_Raw_Char, "0E-8", "0") %>% as.numeric(),
+    # Create the logged dependent variable, suppressing errors (we will filter NA/Inf next)
+    ln_Sale_Price = log(Sale_Price_Raw)
+  ) %>%
+  
+  # --- 3. Feature Engineering (Derived Variables) ---
+  
+  mutate(
+    Transaction_Year = year(Recording_Date),
+    Recording_Quarter = quarter(Recording_Date, with_year = TRUE) %>% as.character(),
+    # Calculate Property Age
+    Property_Age = Transaction_Year - Year_Built,
+    # Convert Tract ID to character for proper use as a grouping/fixed-effect factor
+    Tract_ID = as.character(Tract_ID)
+  ) %>%
+  
+  # --- 4. Final Filtering ---
+  
+  # Filter out records not usable for the hedonic model (e.g., zero or missing sale price)
+  filter(!is.na(ln_Sale_Price) & is.finite(ln_Sale_Price) & Sale_Price_Raw > 1000) %>%
+  
+  # Drop the intermediate character column
+  select(-Sale_Price_Raw_Char)
+
+# Review the final structure
+glimpse(concentrated_data)
+
+```
+
+```{r}
+# --- 1. Clean, Transform, and Rename Core Variables ---
+
+concentrated_data_pre_filter <- final_joined_data %>%
+  # Select the most critical variables and standardize names
+  select(
+    # --- DEPENDENT VARIABLE ---
+    Sale_Price_Raw_Char = adjusted_total_consideration,
+
+    # --- LOCATION AND TIME KEYS (for Index and Fixed Effects) ---
+    Tract_ID = census_tract,
+    Recording_Date = recording_date.rtt,
+
+    # --- STRUCTURAL CONTROLS ---
+    Livable_Area = total_livable_area,
+    Year_Built = year_built,
+    Property_Type = building_code_description,
+    Quality_Grade = quality_grade,
+    Num_Beds = number_of_bedrooms,
+    Num_Baths = number_of_bathrooms,
+    Basements = basements,
+    Central_Air = central_air,
+    Fireplaces = fireplaces,
+
+    # --- Other Control Variables (e.g., Assessed Value for check) ---
+    OPA_Market_Value_Current = market_value.y, # Current assessed value
+    Assessed_Market_Value_Hist = market_value.x,        # Historical annual assessment (from assessments table)
+    Zoning = zoning
+  ) %>%
+  
+  # --- 2. Data Cleaning and Transformation ---
+  
+  # Clean Sale Price: Convert from character, replacing "0E-8" with 0
+  mutate(
+    Sale_Price_Raw = str_replace_all(Sale_Price_Raw_Char, "0E-8", "0") %>% as.numeric(),
+    # Create the logged dependent variable, suppressing errors (we will filter NA/Inf next)
+    ln_Sale_Price = log(Sale_Price_Raw)
+  ) %>%
+  
+  # --- 3. Feature Engineering (Derived Variables) ---
+  
+  mutate(
+    Transaction_Year = year(Recording_Date),
+    Recording_Quarter = quarter(Recording_Date, with_year = TRUE) %>% as.character(),
+    # Calculate Property Age
+    Property_Age = Transaction_Year - Year_Built,
+    # Convert Tract ID to character for proper use as a grouping/fixed-effect factor
+    Tract_ID = as.character(Tract_ID)
+  ) 
+```
+
+```{r}
+final_joined_data%>%
+  filter(sale_price < 1000) %>%
+  ggplot(aes(x = sale_price)) +
+  geom_histogram(bins = 10)
+```
+
+```{r}
+concentrated_data_pre_filter%>%
+ filter(Sale_Price_Raw > 1000)%>%
+  count()
+```
+
+```{r}
+#write.csv(concentrated_data, "/Users/nathanmcclay/Downloads/Fa25/Public Economics/Mortgage Markets/Data/Public Economics Capstone/concentrated_data.csv")
+```
+
+```{r}
+final_joined_data <- final_joined_data%>%
+  filter(grepl("DEED", document_type, ignore.case = TRUE))%>%
+  count()
+
+
+```
+
+```{r}
+final_joined_data%>%
+group_by(document_type)%>%
+summarise(count = n())%>%
+print(n=29)
+```
+
+
+```{r}
+#real_estate_transfers_clean <- read_csv("/Users/nathanmcclay/Downloads/Fa25/Public Economics/Mortgage Markets/Data/Public Economics Capstone/real_estate_transfers.csv")
+
+```
+
+```{r}
+real_estate_transfers_clean%>%
+  group_by(document_type)%>%
+summarise(count = n())
+```
+
+
+```{r}
+hedonic_attributes <- OPA_clean %>%
+  select(parcel_number = opa_account_9digit, assessment_date, basements,category_code,category_code_description,census_tract, depth, exterior_condition, fireplaces, frontage, fuel, garage_spaces, garage_type, general_construction, house_number, interior_condition, market_value, number_of_bathrooms, number_of_bedrooms, number_of_rooms, number_stories, other_building, quality_grade, sale_date, sale_price,separate_utilities, sewer, shape, topography, total_area, total_livable_area, type_heater, unfinished, view_type, year_built, year_built_estimate,zoning, building_code_new, building_code_description_new, quality_grade)
+```
+
+
+```{r}
+hedonic_df <- real_estate_transfers_clean %>%
+  rename(parcel_number = opa_account_num)%>%
+  inner_join(hedonic_attributes, by = "parcel_number")
+```
+
+```{r Create dirty_hedonic File}
+write_csv(hedonic_df, "/Users/nathanmcclay/Downloads/Fa25/Public Economics/Mortgage Markets/Data/Public Economics Capstone/dirty_hedonic.csv")
+```
+
+```{r}
+names(hedonic_df)
+```
+
+```{r}
+hed_dirty <- read_csv("dirty_hedonic.csv")
+```
+
+```{r}
+hed_dirty%>%
+  filter(sale_price <= 1000 & sale_price >200) %>%
+  ggplot(aes(x = sale_price)) +
+  geom_histogram(bins = 20)
+```
+
+```{r}
+hed_dirty%>%
+  filter(sale_price <= 200 & sale_price >0) %>%
+  ggplot(aes(x = sale_price)) +
+  geom_histogram(bins = 20)
+```
+```{r}
+hed_sales <- hed_dirty %>%
+  # 1. Keep only "DEED" type documents (drop mortgages, satisfactions, etc.)
+  filter(grepl("DEED", document_type, ignore.case = TRUE)) %>%
+  # 2. Drop sheriff’s deeds
+  filter(!grepl("SHERIFF", document_type, ignore.case = TRUE)) %>%
+  # 3. Require a positive, non-trivial sale price
+  filter(!is.na(sale_price),
+         sale_price >= 1000) %>%
+  # 4. If property_count exists, keep single-property transfers
+  filter(is.na(property_count) | property_count == 1)
+
+```
+
+```{r}
+hed_sales%>%
+  select(sale_price)%>%
+  arrange(desc(-sale_price))
+```
+
+
+
+```{r}
+hed_dirty %>% count(category_code_description, sort = TRUE)
+hed_dirty %>% count(category_code, sort = TRUE)
+hed_dirty %>% count(building_code_description_new, sort = TRUE)%>%print(n=117)
+```
+```{r}
+hed_res <- hed_sales %>%
+  # 1. Filter to only icnlude residential buildings
+  filter(category_code == 1 )%>% #1 = residential
+  # 2. Require a positive, non-trivial sale price
+  filter(!is.na(sale_price),
+         sale_price >= 1000) %>%
+  # 3. If property_count exists, keep single-property transfers
+  filter(is.na(property_count) | property_count == 1)
+
+```
+
+
+```{r}
+hed_sales %>% count(category_code_description, sort = TRUE)
+hed_sales %>% count(category_code, sort = TRUE)
+hed_sales %>% count(building_code_description_new, sort = TRUE)%>%print(n=117)
+```
+
+```{r}
+hed_res%>%
+  group_by(document_type)%>%
+  count(category_code_description)
+```
+
+```{r}
+names(hed_res)
+```
+
+
+```{r}
+hedonic_for_model <- hed_clean %>%
+  select(
+    # identifiers / keys
+    parcel_number, reg_map_id, census_tract, ward, zip_code,
+    # sale info
+    sale_price, log_price, sale_date, sale_year, document_type,
+    # structure
+    total_livable_area, total_area, land_area = total_area, # alias if you like
+    number_of_bedrooms, number_of_bathrooms,
+    number_stories,
+    garage_spaces, basements,
+    exterior_condition, interior_condition,
+    year_built, year_built_estimate,
+    building_code_description_new, category_code_description,
+    # maybe assessed values for robustness
+    market_value, assessed_value, fair_market_value,
+    # location details (optional but handy)
+    street_address, condo_name, unit_num
+  )
+
+```
+

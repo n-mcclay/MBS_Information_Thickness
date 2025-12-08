@@ -1,0 +1,200 @@
+---
+title: "Hedonic Dataset Creation"
+author: "Nathan McClay"
+date: "2025-12-06"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+require(tidyverse)
+```
+
+```{r}
+hed_dirty%>%
+  filter(sale_price <= 1000 & sale_price >200) %>%
+  ggplot(aes(x = sale_price)) +
+  geom_histogram(bins = 20)
+```
+
+```{r}
+hed_dirty%>%
+  filter(sale_price <= 200 & sale_price >0) %>%
+  ggplot(aes(x = sale_price)) +
+  geom_histogram(bins = 20)
+```
+
+```{r}
+hed_sales <- hed_dirty %>%
+  # 1. Keep only "DEED" type documents (drop mortgages, satisfactions, etc.)
+  filter(grepl("DEED", document_type, ignore.case = TRUE)) %>%
+  # 2. Drop sheriff’s deeds
+  filter(!grepl("SHERIFF", document_type, ignore.case = TRUE)) %>%
+  # 3. Require a positive, non-trivial sale price
+  filter(!is.na(sale_price),
+         sale_price >= 1000) %>%
+  # 4. If property_count exists, keep single-property transfers
+  filter(is.na(property_count) | property_count == 1)
+
+```
+
+```{r}
+hed_sales%>%
+  select(sale_price)%>%
+  arrange(desc(-sale_price))
+```
+
+
+
+```{r}
+hed_dirty %>% count(category_code_description, sort = TRUE)
+hed_dirty %>% count(category_code, sort = TRUE)
+hed_dirty %>% count(building_code_description_new, sort = TRUE)%>%print(n=117)
+```
+
+```{r}
+hed_res <- hed_sales %>%
+  # 1. Filter to only icnlude residential buildings
+  filter(category_code == 1 )%>% #1 = residential
+  # 2. Require a positive, non-trivial sale price
+  filter(!is.na(sale_price),
+         sale_price >= 1000) %>%
+  # 3. If property_count exists, keep single-property transfers
+  filter(is.na(property_count) | property_count == 1)
+
+```
+
+
+```{r}
+hed_sales %>% count(category_code_description, sort = TRUE)
+hed_sales %>% count(category_code, sort = TRUE)
+hed_sales %>% count(building_code_description_new, sort = TRUE)%>%print(n=117)
+```
+
+```{r}
+hed_res%>%
+  group_by(document_type)%>%
+  count(category_code_description)
+```
+
+```{r}
+names(hed_res)
+```
+
+```{r}
+typeof(objects(hed_res))
+```
+
+```{r}
+
+# 1. Create the variable info tibble (long format)
+variable_info_clean <- hed_res %>%
+  # Get the variable names and their types as a tibble
+  map_dfr(class, .id = "Variable Name") %>%
+  # Rename the class column to 'Variable Type'
+  rename(`Variable Type` = 2) %>%
+```
+
+```{r}
+hed_res_dictionary <- variable_info_clean%>%
+  pivot_longer( cols = everything(),
+                names_to = "Name",
+                values_to = "Type"
+                )
+
+```
+
+```{r}
+write_csv(hed_res_dictionary, "hed_res_dictionary.csv")
+```
+
+```{r}
+# Load the necessary tidyverse libraries
+library(tidyverse)
+
+# --- 1. Load the Data Files ---
+hed_res_dict <- read_csv("hed_res_dictionary.csv") #empty dictionary
+opa_fields <- read_csv("opa_fields.csv")          #meta data on Assessment Data sourced from Open Data Philly Office of Property Assessment
+rtt_fields <- read_csv("rtt_fields.csv")          #meta data on Assessment Data sourced from Open Data Philly Real Estate Trasfer Tax
+
+# --- 2. Prepare Source Data (OPA & RTT) and Normalize Case ---
+
+# Prepare OPA data: select columns, rename, add Origin, and normalize Name to UPPERCASE
+opa_clean <- opa_fields %>%
+  select(Name = `Field Name`, Description) %>%
+  mutate(
+    Origin = "OPA",
+    Name_Upper = str_to_upper(Name)
+  )
+
+# Prepare RTT data: select columns, rename, add Origin, and normalize Name to UPPERCASE
+rtt_clean <- rtt_fields %>%
+  select(Name = `Field Name`, Description) %>%
+  mutate(
+    Origin = "RTT",
+    Name_Upper = str_to_upper(Name) # Already uppercase, but included for consistency
+  )
+
+# Combine OPA and RTT into one source dictionary.
+# We ensure unique names, keeping the first match (OPA in this case, then RTT)
+source_dict <- bind_rows(opa_clean, rtt_clean) %>%
+  distinct(Name_Upper, .keep_all = TRUE) # Ensures unique keys for joining
+
+# --- 3. Prepare Target Data (hed_res_dict) and Normalize Case ---
+
+# Add the normalized uppercase column for joining
+hed_res_dict_normalized <- hed_res_dict %>%
+  mutate(Name_Upper = str_to_upper(Name))
+
+# --- 4. Perform Left Join to Enrich the Dictionary ---
+
+# Join the normalized target dictionary with the source dictionary on the uppercase key.
+# This pulls in the Description and Origin columns.
+enriched_dict <- hed_res_dict_normalized %>%
+  left_join(
+    source_dict %>% select(Name_Upper, Description, Origin), # Select only the join key and new columns
+    by = "Name_Upper"
+  ) %>%
+  # --- 5. Final Cleanup ---
+  # Remove the temporary uppercase column and select the final column order
+  select(
+    Name,
+    Type,
+    Description,
+    Origin
+  )
+
+# --- 6. View and Export the Final Table ---
+print(enriched_dict)
+write_csv(enriched_dict, "hed_res_enriched_dictionary_final.csv")
+```
+
+
+```{r}
+hedonic_for_model <- hed_clean %>%
+  select(
+    # identifiers / keys
+    parcel_number, reg_map_id, census_tract, ward, zip_code,
+    # sale info
+    sale_price, log_price, sale_date, sale_year, document_type,
+    # structure
+    total_livable_area, total_area, land_area = total_area, 
+    number_of_bedrooms, number_of_bathrooms,
+    number_stories,
+    garage_spaces, basements,
+    exterior_condition, interior_condition,
+    year_built, year_built_estimate,
+    building_code_description_new, category_code_description,
+    # maybe assessed values for robustness
+    market_value, assessed_value, fair_market_value,
+    # location details (optional but handy)
+    street_address, condo_name, unit_num
+  )
+
+```
+
+
+
