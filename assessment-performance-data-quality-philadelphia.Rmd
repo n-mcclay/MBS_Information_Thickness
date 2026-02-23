@@ -1,0 +1,470 @@
+---
+title: 'Assessment Performance and Data Quality: Evidence from Philadelphia Property
+  Sales'
+author: "Nathan McClay"
+date: "2026-02-23"
+output: html_document
+---
+
+
+# 1. Executive Summary 
+
+>
+- **Evaluated:** Alignment between OPA assessed values and observed residential sale prices in Philadelphia.
+- **Method:** Constructed an arm’s-length residential sample; assessed fit in log–log space; measured dispersion via COD; stratified by price decile and transaction-level data-quality flags.
+- **Found:** Dispersion is low and stable when transactions have **0 flags**, and rises sharply with **1+ flags**; conditional-on-price dispersion remains higher for flagged records.
+- **Why it matters:** Apparent “assessment error” is partly **data-quality-conditioned**, so uncertainty is structured—not uniform—implying targeted data integrity improvements can materially improve assessment performance.
+
+```{r setup, include=FALSE}
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(lubridate)
+  library(ggpubr)
+  library(fixest)
+  library(knitr)
+})
+```
+
+# 2. Data and Sample Construction
+
+## 2.1 Data Integration
+>The analysis combines two public administrative datasets:
+- Office of Property Assessment (OPA) property characteristics file (583,776 records)
+- Real Estate Transfer (RTT) transaction records (218,322 documents)
+Records were merged at the parcel level using a standardized 9-digit parcel identifier.
+
+```{r initial datasets, include=FALSE}
+OPA <- read_csv("opa_properties_public_2020.csv")
+real_estate_transfers_clean <- read_csv("real_estate_transfers.csv")
+```
+
+```{r include=FALSE}
+OPA_clean <- OPA %>%
+  rename(opa_account_9digit = parcel_number) %>%
+  rename(reg_map_id_opa = registry_number)
+```
+
+```{r include=FALSE}
+hedonic_attributes <- OPA_clean %>%
+  select(parcel_number = opa_account_9digit, assessment_date, basements,category_code,category_code_description,census_tract, depth, exterior_condition, fireplaces, frontage, fuel, garage_spaces, garage_type, general_construction, house_number, interior_condition, market_value, number_of_bathrooms, number_of_bedrooms, number_of_rooms, number_stories, other_building, quality_grade, sale_date, sale_price,separate_utilities, sewer, shape, topography, total_area, total_livable_area, type_heater, unfinished, view_type, year_built, year_built_estimate,zoning, building_code_new, building_code_description_new, quality_grade)
+```
+
+```{r include=FALSE}
+hedonic_df <- real_estate_transfers_clean %>%
+  rename(parcel_number = opa_account_num) %>%
+  inner_join(hedonic_attributes, by = "parcel_number")
+```
+
+```{r echo=FALSE}
+tibble(
+  Stage = "Post-Merge",
+  Observations = nrow(hedonic_df)
+)
+```
+
+> The merged dataset links administrative assessments to observed transaction prices at the parcel level and forms the basis of the analytic sample.
+
+## 2.2 Construction of Arm’s-Length Residential Sample
+
+>To construct an analytic sample consistent with ratio-study standards, transactions were filtered to isolate arm’s-length residential sales.
+The following restrictions were applied:
+- Limited to recorded **DEED** transactions  
+- Excluded sheriff’s deeds and non-market transfers  
+- Removed nominal transfers below **$1,000**  
+- Restricted to residential properties  
+- Retained only single-property transfers  
+These steps align with International Association of Assessing Officers (IAAO) guidance for constructing defensible assessment ratio samples.
+
+```{r filter_and_dedup, include=FALSE}
+hed_dirty <- hedonic_df
+
+hed_sales <- hed_dirty %>%
+  filter(grepl("DEED", document_type, ignore.case = TRUE)) %>%
+  filter(!grepl("SHERIFF", document_type, ignore.case = TRUE)) %>%
+  filter(!is.na(sale_price), sale_price >= 1000) %>%
+  filter(is.na(property_count) | property_count == 1)
+
+hed_res <- hed_sales %>%
+  filter(category_code == 1) %>%
+  filter(!is.na(sale_price), sale_price >= 1000) %>%
+  filter(is.na(property_count) | property_count == 1)
+
+hed_res_dedup <- hed_res %>%
+  group_by(parcel_number, sale_date) %>%
+  arrange(desc(total_consideration), .by_group = TRUE) %>%
+  slice(1) %>%
+  ungroup()
+```
+
+```{r echo=FALSE}
+tibble(
+  Stage = "Residential Arm's-Length Transactions",
+  Observations = nrow(hed_res)
+)
+```
+
+>These restrictions remove non-market transfers and isolate residential deed transactions suitable for assessment ratio analysis.
+
+## 2.3 Deduplication of Parcel-Date Transactions
+
+>Inspection revealed multiple observations sharing identical parcel identifiers and sale dates. Investigation showed that these cases reflected multiple recorded documents tied to a single transaction rather than merge artifacts.
+To approximate the finalized transaction, the document with the highest total consideration was retained within each parcel–sale-date group. This approach preserves one arm’s-length observation per economic transaction while minimizing structural duplication.
+
+
+```{r echo=FALSE}
+tibble(
+  Stage = "Post-Deduplication Sample",
+  Observations = nrow(hed_res_dedup)
+)
+```
+
+>Retaining the highest total consideration within each parcel-date group ensures that each transaction enters the analysis once.
+
+## 3. Log–Log Assessment Alignment
+
+> As a first-order diagnostic, log-transformed assessed values are compared to log-transformed sale prices to evaluate proportional alignment across the valuation distribution.
+
+```{r loglog_plot, echo=FALSE, message=FALSE, warning=FALSE}
+hed_res_dedup %>%
+  filter(assessed_value > 0, sale_price > 0) %>%
+  ggplot(aes(x = log(assessed_value), y = log(sale_price))) +
+  geom_point(alpha = .2) +
+  geom_smooth(method = "lm", color = "red", se = FALSE) +
+  geom_smooth(se = FALSE) +
+  theme_minimal(base_size = 13) +
+  labs(
+    x = "log(Assessed Value)",
+    y = "log(Sale Price)",
+    title = "Global vs Local Fit of Assessed Value to Observed Sale Price"
+  )
+```
+
+
+> The local smooth departs from the global log–log line at the tails, indicating that proportional alignment varies across the value distribution. This pattern is **descriptive** and may reflect a mix of market segmentation, nonlinear attribute pricing, or data-quality irregularities. For that reason, the subsequent analysis focuses on **dispersion measures** and explicitly tests whether dispersion increases with observable data-quality flags *within* valuation regimes.
+
+
+## 4. Data Quality Flags and Ratio Construction
+
+```{r, include=FALSE}
+hed_res_dedup <- hed_res_dedup %>%
+  mutate(
+    sale_year = lubridate::year(sale_date),
+    sale_qtr  = lubridate::quarter(sale_date),
+    bad_date_flag = sale_year < 1990 | sale_year > 2025
+  )
+```
+
+```{r Data Flag, include=FALSE}
+hed_res_dedup <- hed_res_dedup %>%
+  filter(fair_market_value > 0) %>%
+  mutate(
+    extreme_fmv_flag = fair_market_value > quantile(fair_market_value, 0.999)
+  )
+```
+
+```{r Data Flag2, include=FALSE}
+hed_res_dedup <- hed_res_dedup %>%
+  mutate(
+    ratio = sale_price / assessed_value,
+    extreme_ratio_flag = ratio < 0.5 | ratio > 1.5
+  )
+```
+
+```{r Ratio Construction, include=FALSE}
+hed_flagged <- hed_res_dedup %>%
+  mutate(
+    sp_av_ratio  = sale_price / assessed_value,
+    sp_fmv_ratio = sale_price / fair_market_value,
+    av_sp_ratio  = assessed_value / sale_price,
+    log_sp_av_gap  = log(sale_price) - log(assessed_value),
+    log_sp_fmv_gap = log(sale_price) - log(fair_market_value)
+  )
+```
+
+```{r Administrative Integrity Flags, include=FALSE}
+hed_flagged <- hed_flagged %>%
+  mutate(
+    bad_assessed_flag =
+      is.na(assessed_value) | assessed_value <= 0 |
+      assessed_value > quantile(assessed_value, 0.999, na.rm = TRUE),
+
+    bad_clr_flag =
+      is.na(common_level_ratio) | common_level_ratio <= 0 |
+      common_level_ratio > 10,   # CLR should never be remotely this large
+
+    bad_fmv_flag =
+      is.na(fair_market_value) | fair_market_value <= 0 |
+      fair_market_value > quantile(fair_market_value, 0.999, na.rm = TRUE),
+
+    # identity check (should be ~ exact except rounding / source quirks)
+    fmv_identity_flag =
+      !is.na(assessed_value) & !is.na(common_level_ratio) & !is.na(fair_market_value) &
+      abs(fair_market_value - assessed_value * common_level_ratio) /
+        pmax(fair_market_value, 1) > 0.02
+  )
+```
+
+```{r Arm-Length Flags, include=FALSE}
+hed_flagged <- hed_flagged %>%
+  mutate(
+    nominal_price_flag = sale_price < 10000,
+    extreme_ratio_flag = sp_fmv_ratio < 0.5 | sp_fmv_ratio > 1.5
+  )
+```
+
+```{r Composite Good Flags, include=FALSE}
+hed_flagged <- hed_flagged %>%
+  mutate(
+    bad_sqft_flag =
+      is.na(total_livable_area) |
+      total_livable_area <= 200 |
+      total_livable_area >= 10000,
+
+    ppsf = sale_price / total_livable_area,
+
+    extreme_ppsf_flag =
+      !is.na(ppsf) &
+      (ppsf < quantile(ppsf, 0.01, na.rm = TRUE) |
+       ppsf > quantile(ppsf, 0.99, na.rm = TRUE)),
+
+    room_logic_flag =
+      (!is.na(number_of_rooms) & !is.na(number_of_bedrooms) & number_of_bedrooms > number_of_rooms) |
+      (!is.na(number_of_rooms) & !is.na(number_of_bathrooms) & number_of_bathrooms > number_of_rooms),
+
+    bad_year_built_flag =
+      is.na(year_built) | year_built < 1700 | year_built > lubridate::year(sale_date)
+  )
+```
+
+```{r Document Date Flags, include=FALSE}
+hed_flagged <- hed_flagged %>%
+  mutate(
+    sale_year = lubridate::year(sale_date),
+    doc_year  = lubridate::year(document_date),
+
+    bad_date_flag =
+      is.na(sale_date) | is.na(document_date) |
+      sale_year < 1990 | sale_year > 2025 |
+      doc_year  < 1990 | doc_year  > 2025,
+
+    big_date_gap_flag =
+      !is.na(sale_date) & !is.na(document_date) &
+      abs(as.numeric(difftime(document_date, sale_date, units = "days"))) > 365
+  )
+```
+
+```{r Severity Score, include=FALSE}
+hed_flagged <- hed_flagged %>%
+  mutate(
+    n_flags =
+      bad_assessed_flag + bad_clr_flag + bad_fmv_flag + fmv_identity_flag +
+      nominal_price_flag + extreme_ratio_flag +
+      bad_sqft_flag + extreme_ppsf_flag + room_logic_flag + bad_year_built_flag +
+      bad_date_flag + big_date_gap_flag
+  )
+```
+
+```{r Price Binning, include=FALSE}
+hed_flagged <- hed_flagged %>%
+  mutate(price_bin = ntile(sale_price, 10))
+```
+
+```{r Within Bin CoD Calculation, include=FALSE}
+cod_fn <- function(ratio) {
+  med <- median(ratio, na.rm = TRUE)
+  mean(abs(ratio - med), na.rm = TRUE) / med
+}
+
+within_bin_cod <- hed_flagged %>%
+  mutate(
+    assessment_ratio = assessed_value / sale_price,
+    flag_group = case_when(
+      n_flags == 0 ~ "0 flags",
+      n_flags == 1 ~ "1 flag",
+      n_flags >= 2 ~ "2+ flags"
+    )
+  ) %>%
+  group_by(price_bin, flag_group) %>%
+  summarise(
+    n = n(),
+    median_ratio = median(assessment_ratio, na.rm = TRUE),
+    COD = cod_fn(assessment_ratio),
+    IQR = IQR(assessment_ratio, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  filter(n >= 30)
+```
+
+```{r Flag Distribution Table, echo=FALSE}
+ hed_flagged %>%
+  count(n_flags) %>%
+  kable(caption = "Distribution of transaction-level data-quality flags")
+```
+
+>Transactions were assigned a count of observable data-quality flags (e.g., nominal pricing, structural inconsistencies, extreme ratios).
+Across the full sample:
+Median assessment ratios remain close to unity for zero-flag transactions.
+The coefficient of dispersion (COD) increases monotonically with the number of flags.
+The interquartile range of log assessment ratios widens substantially once one or more flags are present.
+This indicates that dispersion in assessment ratios is systematically associated with identifiable transaction irregularities.
+
+## 5. Dispersion by Flag Severity
+
+
+### 5.1 Distribution of Log Assessment Ratios
+
+>To evaluate whether dispersion is associated with flagged irregularities, log assessment ratios are stratified by the number of data-quality flags.
+
+```{r Violin Plot, echo=FALSE}
+hed_flagged %>%
+  mutate(log_ratio = log(assessed_value / sale_price),
+         n_flags = factor(n_flags, ordered = TRUE)) %>%
+  ggplot(aes(x = n_flags, y = log_ratio)) +
+  geom_violin(fill = "grey85", color = "grey40", trim = TRUE) +
+  geom_boxplot(width = 0.15, outlier.shape = NA, fill = "white") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  theme_minimal()
+```
+
+> The spread of log assessment ratios widens as the number of flags increases, indicating greater dispersion among flagged transactions.
+
+### 5.2 Summary Dispersion Statistics
+
+> Dispersion is quantified using the coefficient of dispersion (COD) and the interquartile range (IQR) of assessment ratios.
+
+```{r Summary Table (Dispersion by Flag Count), echo=FALSE}
+flag_summary <- hed_flagged %>%
+  group_by(n_flags) %>%
+  summarise(
+    n = n(),
+    median_ratio = median(assessed_value / sale_price, na.rm = TRUE),
+    COD = mean(abs((assessed_value / sale_price) - median(assessed_value / sale_price, na.rm = TRUE)), na.rm = TRUE) /
+      median(assessed_value / sale_price, na.rm = TRUE),
+    IQR = IQR(log(assessed_value / sale_price), na.rm = TRUE),
+    .groups = "drop"
+  )
+
+kable(flag_summary, digits = 3,
+      caption = "Assessment ratio behavior by number of data-quality flags")
+```
+
+> COD and IQR increase monotonically with flag count, suggesting that flagged transactions exhibit systematically greater dispersion.
+
+## 6. Conditional Dispersion by Valuation Regime
+
+### 6.1 Conditioning on Sale-Price Decile
+
+> Because dispersion may vary across valuation regimes, transactions are stratified by sale-price decile, and COD is computed within each decile.
+
+```{r Conditional COD Plot (Within Price Bin), echo=FALSE}
+within_bin_cod %>%
+  ggplot(aes(x = factor(price_bin), y = COD, fill = flag_group)) +
+  geom_col(position = "dodge") +
+  theme_minimal() +
+  labs(x = "Price Bin", y = "COD")
+```
+
+> Within most price bins, transactions with additional flags exhibit higher COD values than zero-flag transactions.
+
+## 7. Bootstrap Validation of Dispersion Estimates
+
+### 7.1 Sampling Variability of COD
+
+> Bootstrap resampling is used to assess the sampling variability of COD estimates within each price-bin and flag-group cell.
+
+```{r Bootstrap SEs for COD, include=FALSE}
+set.seed(1)
+B <- 1000
+
+boot_cod_grouped <- hed_flagged %>%
+  mutate(
+    assessment_ratio = assessed_value / sale_price,
+    flag_group = case_when(
+      n_flags == 0 ~ "0 flags",
+      n_flags == 1 ~ "1 flag",
+      n_flags >= 2 ~ "2+ flags"
+    )
+  ) %>%
+  filter(is.finite(assessment_ratio), assessment_ratio > 0) %>%
+  group_by(price_bin, flag_group) %>%
+  summarise(
+    n = n(),
+    COD = cod_fn(assessment_ratio),
+    boot = list(
+      if (n() >= 30) {
+        replicate(B, cod_fn(sample(assessment_ratio, replace = TRUE)))
+      } else NA_real_
+    ),
+    .groups = "drop"
+  ) %>%
+  unnest_longer(boot, values_to = "COD_b") %>%
+  group_by(price_bin, flag_group, n, COD) %>%
+  summarise(
+    COD_se    = sd(COD_b, na.rm = TRUE),
+    COD_ci_lo = quantile(COD_b, 0.025, na.rm = TRUE),
+    COD_ci_hi = quantile(COD_b, 0.975, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+```
+
+```{r Assessment Ratios by Flag Count, echo=FALSE}
+hed_flagged %>%
+  mutate(
+    assessment_ratio = assessed_value / sale_price,
+    log_ratio = log(assessment_ratio),
+    n_flags = factor(n_flags, ordered = TRUE)
+  ) %>%
+  filter(is.finite(log_ratio)) %>%
+  ggplot(aes(x = n_flags, y = log_ratio)) +
+  geom_violin(fill = "grey85", color = "grey40", trim = TRUE) +
+  geom_boxplot(width = 0.15, outlier.shape = NA, fill = "white") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  theme_minimal(base_size = 13) +
+  labs(
+    x = "Number of Data-Quality Flags",
+    y = "log(Assessed Value / Sale Price)",
+    title = "Assessment Dispersion Increases with Data Quality Irregularities" )
+```
+
+
+```{r Conidtional CoD by Flag Regime, echo=FALSE}
+cwithin_bin_cod <- hed_flagged %>%
+  mutate(
+    assessment_ratio = assessed_value / sale_price,
+    flag_group = case_when(
+      n_flags == 0 ~ "0 flags",
+      n_flags == 1 ~ "1 flag",
+      n_flags >= 2 ~ "2+ flags"
+    )
+  ) %>%
+  filter(is.finite(assessment_ratio), assessment_ratio > 0) %>%
+  group_by(price_bin, flag_group) %>%
+  summarise(
+    n = n(),
+    median_ratio = median(assessment_ratio, na.rm = TRUE),
+    COD = cod_fn(assessment_ratio),
+    IQR = IQR(assessment_ratio, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  filter(n >= 30)
+```
+
+
+```{r Bootstrap Validation of CoD, echo=FALSE}
+boot_cod_grouped %>%
+  filter(n >= 30, is.finite(COD_ci_lo), is.finite(COD_ci_hi)) %>%
+  select(price_bin, flag_group, n, COD, COD_se, COD_ci_lo, COD_ci_hi) %>%
+  kable(digits = 3,
+        caption = "Bootstrap confidence intervals for COD (cells with n ≥ 30)")
+```
+
+> Cells with fewer than 30 observations are omitted due to unstable bootstrap inference.
+
+>For sufficiently large cells, confidence intervals remain separated across flag groups, indicating that dispersion differences are not attributable to sampling variability alone.
+
+## 8. Summary of Empirical Results
+
+> The analysis proceeds from global alignment diagnostics to ratio-based dispersion measures and conditional stratification. Across specifications, dispersion increases with the accumulation of transaction-level data-quality flags. This pattern persists within valuation regimes and remains robust under bootstrap validation.
+
+
