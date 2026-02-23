@@ -1,0 +1,352 @@
+Name,Type,Description,Origin
+the_geom,character,NA,NA
+Variable Type,numeric,NA,NA
+the_geom_webmercator,character,NA,NA
+objectid,numeric,Derived to satisfy feature-class requirement.,RTT
+document_id,numeric,"The id of the real estate transfer document which relates documents, properties and owners.",RTT
+document_type,character,"Includes the following types of documents: AFFIDAVIT OF STREET OPENING, AMENDMENT TO CONDOMINIUM, ASSIGNMENT OF MORTGAGE, CERTIFICATE OF STOCK TRANSFER, DECLARATION OF CONDOMINIUM, DEED, DEED MISCELLANEOUS, DEED MISCELLANEOUS TAXABLE, DEED OF CONDEMNATION, DEED SHERIFF, MORTGAGE, RELEASE OF MORTGAGE, SATISFACTION, SATISFACTION OF MORTGAGE.<br /><br />Please note that the 'Deed Miscellaneous' category represents less common real estate-related records, including, for example, easements, lis pendens, memoranda of lease, mortgage modification agreements, etc.",RTT
+display_date,POSIXct,"This field is used to ensure a sensible date for the record. The document date is used when present and sensible on the original document, otherwise the document recording date is used. Derived from document_date/recording date.",RTT
+street_address,character,"The standardized address. For documents prior to December, 2015, this is the Passyunk standardized concatenated CRIS_Properties address components. For documents recorded from December, 2015 to present this is the AIS matched address, either by standardized concatenated address components or REG_MAP_ID if no match is made on address.",RTT
+zip_code,numeric,This is a nine-digit field which identifies the full zip code.,OPA
+ward,numeric,NA,NA
+grantors,character,List of grantors associated with the document. Derived from CRIS_Owners by aggregating by R_NUM.,RTT
+grantees,character,List of grantees associated with the document. Derived from CRIS_Owners by aggregating by R_NUM.,RTT
+cash_consideration,numeric,"A monetary payment by the grantee(s) to the grantor(s) associated with a document, provided in exchange for a property. Sourced from CRIS_Documents.",RTT
+other_consideration,numeric,"Any other non-cash payments made by the grantee(s) to the grantor(s) associated with a document, provided in exchange for a property. Sourced from CRIS_Documents.",RTT
+total_consideration,numeric,The total amount of consideration paid (cash consideration plus other consideration).,RTT
+assessed_value,numeric,The assessed value as determined by the Office of Property Assessments. Sourced from CRIS_Documents.,RTT
+common_level_ratio,numeric,"This is the average ratio between the assessed value and fair market value of real estate in Philadelphia County. If the transfer is not exempt from tax, the tax is calculated based on the greater of (a) the actual consideration for the transfer, and (b) the product of the assessed value and the common level ratio factor. The common level ratio is set each July 1 by the State Tax Equalization Board.<br />Sourced from CRIS_Documents.",RTT
+fair_market_value,numeric,The product of the assessed value of a property multiplied by the then-applicable common level ratio for Philadelphia County. Sourced from CRIS_Documents.,RTT
+state_tax_amount,numeric,"The amount of Pennsylvania realty transfer tax paid.  If the transaction is exempt from state realty transfer tax, then this amount will be $0. Sourced from CRIS_Documents.",RTT
+state_tax_percent,numeric,"The percentage of the transaction that is taxable under the state transfer tax, but for an applicable tax exemption.  By way of example, there are transactions where this percentage will be 100 percent, but the â€œState Tax Amountâ€ will be $0. This is because the individual recording the deed represented that the transaction was exempt (i.e., non-taxable) under the state transfer tax.  Additionally, there are transactions where the â€œState Tax Percentâ€ will be 0 percent.  This is because the individual recording the document represented that the transaction was exempt from state transfer tax, but not from local transfer tax.   Sourced from CRIS_Documents.",RTT
+local_tax_amount,numeric,"The amount of local (Philadelphia county) realty transfer tax paid.  If the transaction is exempt from local realty transfer tax, then this amount will be $0. Sourced from CRIS_Documents.",RTT
+local_tax_percent,numeric,"The percentage of the transaction that is taxable under the local transfer tax, but for an applicable tax exemption.  By way of example, there are transactions where this percentage will be 100 percent, but the â€œLocal Tax Amountâ€ will be $0. This is because the individual recording the deed represented that the transaction was exempt (i.e., non-taxable) under the local transfer tax.  Additionally, there are transactions where the â€œLocal Tax Percentâ€ will be 0 percent.  This is because the individual recording the document represented that the transaction was exempt from local transfer tax, but not from state transfer tax.   Sourced from CRIS_Documents.",RTT
+adjusted_cash_consideration,numeric,Derived: ADJUSTED_CASH_CONSIDERATION / PROPERTY_COUNT,RTT
+adjusted_other_consideration,numeric,Derived: ADJUSTED_OTHER_CONSIDERATION  / PROPERTY_COUNT,RTT
+adjusted_total_consideration,numeric,Derived: ADJUSTED_TOTAL_CONSIDERATION / PROPERTY_COUNT,RTT
+adjusted_assessed_value,numeric,Derived: ADJUSTED_ASSESSED_VALUE / PROPERTY_COUNT,RTT
+adjusted_fair_market_value,numeric,Derived: ADJUSTED_FAIR_MARKET_VALUE / PROPERTY_COUNT,RTT
+adjusted_state_tax_amount,numeric,Derived: ADJUSTED_STATE_TAX_AMOUNT / PROPERTY_COUNT,RTT
+adjusted_local_tax_amount,numeric,Derived: ADJUSTED_LOCAL_TAX_AMOUNT / PROPERTY_COUNT,RTT
+receipt_num,logical,The DOR counter number when the document was received.,RTT
+receipt_date,POSIXct,The date the document was received.,RTT
+recording_date,POSIXct,The date the deed was presented to records.,OPA
+document_date,POSIXct,The date on the document.,RTT
+condo_name,character,"Common name of condo, sourced from CRIS_Properties.",RTT
+unit_num,character,"The unit number of the address, sourced from CRIS_Properties.",RTT
+address_low,numeric,Address low number component. Sourced from CRIS_Properties.,RTT
+address_low_suffix,logical,Address low number suffix component. Sourced from CRIS_Properties.,RTT
+address_low_frac,logical,NA,NA
+address_high,numeric,Address high number (for ranged addresses). Sourced from CRIS_Properties.,RTT
+street_predir,character,NA,NA
+street_name,character,NA,OPA
+street_suffix,character,NA,NA
+street_postdir,logical,NA,NA
+reg_map_id,character,The DOR parcel (REGMAP) ID sourced from CRIS_Properties.,RTT
+matched_regmap,character,The dor parcel (REGMAP) ID that has been matched to the address by the geocoder. Derived by ULRS/AIS.,RTT
+parcel_number,character,This is a unique nine-digit parcel identifier/account number created by the Board of Revision of Taxes Staff to identify a specific property.,OPA
+legal_remarks,character,"Any legal remarks about the property, i.e. any notes on legal discrepancies like missing measurements on a property. Sourced from CRIS_PROPERTIES.",RTT
+discrepancy,logical,"Indicates whether a Deed has been identified as having a discrepancy between the legal description of the parcel(s) included in the deed and the official legal description of the parcel(s) contained in the Cityâ€™s tax registry maps  : TRUE/FALSE (only populated for deed documents). The Department of Records sends written notice to owners where such a discrepancy exists, so that the owner may record a Deed of Correction that corrects the legal description in the deed.",RTT
+property_count,numeric,The number of properties associated with a document. Derived/calculated.,RTT
+record_id,numeric,NA,NA
+assessment_date,POSIXct,"The date the assessment was last changed. This is only year month the day is zero, at this<br />time.",OPA
+basements,character,"0. None Ð Indicates no basement.
+A. Full Finished Ð Occupies the entire area under the first floor.
+B. Full Semi-Finished Ð Could have some finish to include a floor covering,
+and ceiling. It looks more like a living area rather than a basement.
+C. Full Unfinished Ð Is a typical basement with unfinished concrete floor,
+either rubble stone or cement over stone or concrete walls and would have
+exposed wood joist ceilings.
+D. Full Ð Unknown Finish
+E. Partial Finished Ð Occupies a portion under the first floor. Be careful of
+areas under sheds and porches. If there is a garage at basement level then it is a
+partial basement.
+F. Partial Semi-Finished Ð One or more finished areas.
+G. Partial Unfinished
+H. Partial - Unknown Finish
+I. Unknown Size - Finished
+J. Unknown Size - Unfinished",OPA
+category_code,numeric,"1. Residential
+2. Hotels and Apartments
+3. Store with Dwelling
+4. Commercial
+5. Industrial
+6. Vacant Land",OPA
+category_code_description,character,NA,OPA
+census_tract,numeric,Census tract is a defined area established by the Census Bureau.,OPA
+depth,numeric,"The depth is measured from the principal street back to the rear property line or secondary street. In the case of different depths of parallel side lines, take an average. In the case of irregular, take the deepest measurement. On corner sites, use the second street frontage as the depth.",OPA
+exterior_condition,numeric,"Relates to how the exterior appears based on observation.
+0. Not Applicable
+1. NEWER CONSTRUCTION Ð Noticeably newer construction then surrounding properties in the GMA.
+
+2. REHABILITATED Ð Property is superior to most other properties on the block.
+Usually the following exterior improvements can be observed:
+New full or partial brick or other material front
+New windows, doors
+New concrete sidewalks, steps, porch, patio or decks
+If you are not certain, use ABOVE AVERAGE.
+3. ABOVE AVERAGE Ð A well-maintained property where the owner does preventive
+maintenance on an on going basis and reacts to any deferred maintenance as it starts
+to occur. Exterior physical condition is better than average and less than
+4. REHABILITATED.
+5. AVERAGE Ð This is the typical and most common physical condition observed at the exterior of most properties on the subject block. No significant concrete work, pointing, painting, carpentry or work to trim exterior walls, doors, windows or bay is required. No obvious defects. Majority of properties in the block or GMA are in this condition.
+6. BELOW AVERAGE Ð Excessive deferred maintenance, wear and tear, abuse, and/or minor vandalism, or unrepaired minor fire damage. These items are starting to add up and take their toll.
+7. VACANT Ð No occupancy. FHA, VA, FNMA signs may be on the property. Property has been secured with fresh plywood over doors and windows.
+8. SEALED Ð Doors and windows have been covered over by plywood, tin, concrete block or stucco. No interior access.
+9. STRUCTURALLY COMPROMISED, OPEN TO THE WEATHER - Some or no windows, no door or door open, evidence of past abuse by vandals such as graffiti, missing railings, deteriorated wood and metal, etc. Scorch marks and/or fire and water damage to exterior brick, siding, bays, etc. Broken windows with blackened and charred interior.",OPA
+fireplaces,numeric,"Most properties in the City of Philadelphia don_t have fireplaces. If there are no fireplaces,
+leave blank. If there are fireplaces, indicate the number. Check for a fireplace chimney. Wood burning stoves are not considered fireplaces.",OPA
+frontage,numeric,"When looking towards the site, this relates to the width of the lot as it abuts the principal street",OPA
+fuel,character,"Heating fuel
+a. Natural Gas
+b. Oil heat
+c. Electric (usually in excess of 150 amps)
+d. Coal
+e. Solar
+f. Wood
+g. Other
+h. None",OPA
+garage_spaces,numeric,NA,OPA
+garage_type,numeric,"Off street parking is parking on the subject site. There are two types: Garage/carport or off
+street open spaces. Garage/carport is sheltered parking where you can park one or more
+vehicles.
+Off street open space(s) relates to a parking pad or lot and is an open-air parking space.
+Sheltered Parking could be any of the following:
+0. None
+A. Basement / Built-In - Built into the front or rear basement of the dwelling or built into
+the first floor of the dwelling.
+B. Attached Garage - Connected to the dwelling.
+C. Detached Garage - A separate building that is not attached to the dwelling or any other
+building.
+F. Converted
+S. Self Park
+T. Attendant",OPA
+general_construction,character,NA,OPA
+house_number,numeric,A five-digit field which indicates a specific property address on a block. Odd numbers are normally on the North or East side of a street. Even numbers are on the South or West side of a street.,OPA
+interior_condition,numeric,"This could indicate the overall condition of the interior.
+0. Not Applicable.
+2. New / Rehabbed Ð Noticeably new construction then surrounding properties
+in the GMA. Property is superior to most other properties on the block. Usually
+the following exterior improvements can be observed.
+
+3. Above Average - would indicate that some work had been done or the level of
+maintenance has been beyond what is typical for the area. The interior would show
+very well and be in move in condition.
+4. Average Ð would be typical.
+5. Below Average Ð would be the opposite. It could appear that maintenance has
+been let go and things normally were not repaired or replace on a regular basis.
+
+6. Vacant Ð No occupancy. FHA, VA, FNMA signs may be on the property.
+Property has been secured with fresh plywood over doors and windows.
+7. Sealed / Structurally Compromised, Open to the Weather Ð
+Doors and windows have been covered over by plywood, tin, concrete block or
+stucco. No interior access. Some or no windows, no door or door open, evidence
+of past abuse by vandals such as graffiti, missing railings, deteriorated wood and
+metal, etc. Scorch marks and/or fire and water damage to exterior brick, siding,
+bays, etc. Broken windows with blackened and charred interior.",OPA
+market_value,numeric,The certified market value of the property.,OPA
+number_of_bathrooms,numeric,NA,OPA
+number_of_bedrooms,numeric,The total number of sleeping rooms.,OPA
+number_of_rooms,numeric,"The total number of rooms in the structure.
+The following are considered to be rooms:
+Enclosed heated sunporch is normally located at the front of the dwelling. It is enclosed
+and appears to have been constructed with the same materials as the original dwelling. It is
+heated and is considered to be a room. It is usually close to square in shape. Unheated frame enclosed porches are not rooms.
+Living Room - is the room that is normally occupied the majority of the day for family
+living. The entrance to the dwelling may be into this room.
+Dining Room - is normally off the living room. It can be between the living room and
+kitchen. This is the room normally used for daily dining or formal dining.
+Living/Dining Room Combination - this would be a dwelling where the partitions have
+been removed that separate the living and dining rooms. It is in effect one large room. This
+would be considered two rooms.
+Family/Recreation Room - This is normally found in newer type dwellings. This would be
+the place where the family would spend much of their time. It is like a combination family,
+entertainment and playroom. This area could be found normally at a lower level and may
+have a fireplace.
+Dens/Studies/Library - This is a room that is characterized by not being any of the other
+rooms mentioned. This could be an in-dwelling office, study room or whatever.
+Kitchen - This would be a room where meals are prepared. You should note if there is more
+than one kitchen. This could indicate the possibility that the property is more than just a
+one-family dwelling. If one family dwelling with two (2) or more kitchens, indicate extra
+kitchens in comments section.
+Bedrooms - Bedrooms are rooms where occupants would spend their sleeping hours. The
+number is typically three in a row house. However, it can vary from two to four. These are
+normally found on the second floor. Once in a while a bedroom can be found at a lower
+level or even in the basement. If in the basement, it should not be considered a bedroom.
+Bathroom - This is not considered a room.
+Other - This would include any other type of rooms that could be found that the occupant
+does identity as a room. Do not include sheds.",OPA
+number_stories,numeric,"This relates to elevation. In the case of a residential property it is the number of stories above basement level. Normally, basements would be partially or fully below the level of the front sidewalk or steps. On some post WWII dwellings, the basement may be on grade at front or rear. Where you have a building that is part one-story and part another story, take
+the predominant height. Only measure in half stories, which should be expressed as decimal (.5). Raised ranchers are normally one story and basement. If there is a rear recreation room or finished basement, it is not a 1.5 story. It would be a one story with a part finished basement. In condominiums, this would relate to floor level.",OPA
+other_building,character,"In most cases there will be only one building or dwelling on the site. In this case it should
+be left blank. However, on deep lots, it is possible there could be a main dwelling and there
+could be a rear dwelling which may have been the servants_ quarters, carriage-type house,
+apartments above garages, a court of trinity dwellings, or other buildings in the form of
+shops, warehouses, storage buildings, etc. If any of the above are found then indicate ÒYÓ.",OPA
+quality_grade,character,"	Quality grade relates to building workmanship and materials.
+1. LOW
+2. BELOW AVERAGE
+This building workmanship and materials is not found that often because of City
+Code. This could relate to amateur construction, etc.
+3. AVERAGE
+Most properties in the City of Philadelphia are of average quality materials and
+workmanship.
+4. ABOVE AVERAGE
+From the exterior you may note that the exterior material could be face brick, cut
+stone or there could be any other materials which could appear to be above average.
+5. SUPERIOR
+6. HIGHEST
+ NONE",OPA
+sale_date,POSIXct,The date the deed was transferred.,OPA
+sale_price,numeric,"This is the sale price or consideration in the deed, the fair market value on the affidavit in the deed or the projected consideration.",OPA
+separate_utilities,character,"(For 2 to 4 Apartment Units only)
+a. Central (one heater, hot water tank, electrical service and gas service).
+b. Part separate - not central or all separate.
+c. All Separate (except water) - All utilities such as cooking gas, gas for hot water, gas for
+heat, electric.",OPA
+sewer,character,NA,OPA
+shape,character,"	Regular-rectangular is typical. Most properties in the City of Philadelphia are laid out on
+streets in a grid pattern and the lots are rectangular in shape. A square lot would also be
+regular. In most cases it will be typical and coded ÒEÓ.
+a. Irregular - This would be a lot other than a square, rectangular or a triangle. It is not a
+grossly irregular shape.
+b. Grossly Irregular - This relates to a shape that may include curves, narrow portions, long
+access driveways or shapes where there are possibly portions of the site that cannot be
+utilized because of the physical shape.
+c. Triangular - This is a parcel of land that is triangular in shape.
+d. Right of way - A long narrow parcel of land.
+e. Rectangular",OPA
+topography,character,"Most lots in the City are at street level. This is a site that would be at street or sidewalk
+grade or level with a slight contour to permit drainage away from the property. This is
+typical and should be indicated as ãF_ or level. Use one of the following that is most
+appropriate.
+a. Above Street Level - This would be topography where you would have to walk up over
+two (2) flights of steps from the front and rear or is hilly or slopes upward sharply.
+This could pose a problem for development.
+b. Below Street Level - This relates to topography that is below the level of the sidewalk
+and street. You have to go down steps or an embankment. This could pose a problem
+for drainage and development.
+c. Flood Plain - This is a site that falls within an identified Zone A flood hazard zone. This
+is normally found in close proximity to flowing water or a high water table. Typically it
+can be found in South and S.W. Phila., and along the rivers, streams, creeks, etc. It
+could include wetlands or land under water.
+d. Rocky - This relates to areas of the City that have very rocky soil or sub-soil conditions that could have an adverse effect on site grading, construction or installation of sewers
+and water mains. This is normally found in Philly areas, such as N.W. Philadelphia.
+e. Relates to anything not identified here that may be observed that may have some effect
+on value. Indicate what it is in the comments section of this form.
+f. Level.",OPA
+total_area,numeric,NA,OPA
+total_livable_area,numeric,NA,OPA
+type_heater,character,"Type of heater or heating system.
+a. Hot air (ducts)
+b. Hot water (radiators or baseboards)
+c. Electric baseboard
+d. Heat pump (outside unit).
+e. Other
+g. Radiant
+h. Undetermined
+_ None",OPA
+unfinished,logical,This is an unfinished status code. ÒUÓ indicates an unfinished status for construction.,OPA
+view_type,character,NA,NA
+year_built,numeric,This is the year the property was built.,OPA
+year_built_estimate,character,Indicate yes if the year built has been estimated.,OPA
+zoning,character,This is a code which identifies the legal uses that are permitted at the property. It is usually a mixture of letters and numbers. It can be found in the zoning maps at the Department of Licenses and Inspections. This field only updates yearly; see the Licenses and Inspections data for the latest zoning records.,OPA
+building_code_new,character,NA,NA
+building_code_description_new,character,NA,NA
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
+,,,
